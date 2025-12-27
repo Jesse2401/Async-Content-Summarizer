@@ -77,5 +77,33 @@ public class JobDao {
             JobStatus.valueOf(rs.getString("status"))
         );
     }
+    
+    public java.sql.Timestamp getCreatedAt(String jobId) throws SQLException {
+        String sql = "SELECT createdAt FROM jobs WHERE id = ?";
+        try (Connection conn = DatabaseConfiguration.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, jobId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getTimestamp("createdAt");
+                }
+                return null;
+            }
+        }
+    }
+    
+    public java.sql.Timestamp getUpdatedAt(String jobId) throws SQLException {
+        String sql = "SELECT updatedAt FROM jobs WHERE id = ?";
+        try (Connection conn = DatabaseConfiguration.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, jobId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getTimestamp("updatedAt");
+                }
+                return null;
+            }
+        }
+    }
 }
 

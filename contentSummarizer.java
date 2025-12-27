@@ -1,25 +1,51 @@
 import strategy.HuggingFaceStrategy;
 import strategy.SummaryStrategy;
 import config.DatabaseConfiguration;
+import worker.JobWorker;
 
 public class contentSummarizer {
     public static void main(String[] args) {
         System.out.println("Initializing database...");
         DatabaseConfiguration.initialize();
         
-        // Test Hugging Face summarization
-        try {
-            SummaryStrategy strategy = new HuggingFaceStrategy();
-            String testContent = "give definition of java in 50 words";
-            
-            System.out.println("\nGenerating summary for: " + testContent);
-            String summary = strategy.generateSummary(testContent);
-            System.out.println("\nSummary: " + summary);
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
-            e.printStackTrace();
+        // Start API Server
+        int apiPort = 8080;
+        if (args.length > 0) {
+            try {
+                apiPort = Integer.parseInt(args[0]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid port number, using default: 8080");
+            }
         }
         
-        System.out.println("\nApplication started successfully!");
+        try {
+            // Create service instance
+            ContentSummarizerService service = new ContentSummarizerServiceImpl();
+            
+            // Start API Server
+            ApiServer apiServer = new ApiServer(apiPort, service);
+            apiServer.start();
+            
+            // Start Job Worker
+            JobWorker jobWorker = new JobWorker();
+            jobWorker.start();
+            
+            System.out.println("\nApplication started successfully!");
+            System.out.println("API Server running on http://localhost:" + apiPort);
+            System.out.println("Press Ctrl+C to stop...");
+            
+            // Keep the application running
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("\nShutting down...");
+                apiServer.stop();
+                jobWorker.stop();
+            }));
+            
+            // Keep main thread alive
+            Thread.currentThread().join();
+        } catch (Exception e) {
+            System.err.println("Error starting application: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
