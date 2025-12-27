@@ -1,3 +1,5 @@
+package models;
+
 import enums.JobStatus;
 import lombok.Getter;
 import lombok.Setter;
