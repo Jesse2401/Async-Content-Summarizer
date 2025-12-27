@@ -6,10 +6,12 @@ import dao.JobDao;
 import strategy.SummaryStrategy;
 import strategy.HuggingFaceStrategy;
 import util.CacheKeyGenerator;
+import util.HtmlContentExtractor;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 
 public class JobWorker {
     private JobDao jobDao;
@@ -24,7 +26,10 @@ public class JobWorker {
         this.queueService = QueueService.getInstance();
         this.redisCache = RedisCache.getInstance();
         this.strategy = new HuggingFaceStrategy();
-        this.httpClient = HttpClient.newHttpClient();
+        // Configure HTTP client with timeout
+        this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
         this.running = true;
     }
     
@@ -120,15 +125,32 @@ public class JobWorker {
     }
     
     private String fetchFromUrl(String url) throws Exception {
+        // Create HTTP request with headers to mimic a browser
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.5")
+            .timeout(Duration.ofSeconds(30))
             .GET()
             .build();
+        
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
         if (response.statusCode() == 200) {
-            return response.body();
+            String htmlContent = response.body();
+            
+            // Extract readable text from HTML
+            String extractedText = HtmlContentExtractor.extractTextWithLimit(htmlContent, 10000);
+            
+            if (extractedText == null || extractedText.trim().isEmpty()) {
+                throw new Exception("No readable content found in the URL");
+            }
+            
+            return extractedText;
+        } else {
+            throw new Exception("Failed to fetch content from URL. HTTP Status: " + response.statusCode());
         }
-        throw new Exception("Failed to fetch content from URL: " + url);
     }
 }
 
