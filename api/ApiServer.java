@@ -1,3 +1,7 @@
+package api;
+
+import service.ContentSummarizerService;
+import util.JsonUtils;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
@@ -8,6 +12,9 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
 public class ApiServer {
+    private static final int DEFAULT_PORT = 8080;
+    private static final int BUFFER_SIZE = 8192;
+    
     private HttpServer server;
     private ContentSummarizerService service;
     private int port;
@@ -20,19 +27,16 @@ public class ApiServer {
     public void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
         
-        // Register POST /submit endpoint
+        server.createContext("/users", new UserHandler());
         server.createContext("/submit", new SubmitHandler());
-        
-        // Register GET /status/{jobId} endpoint
         server.createContext("/status/", new StatusHandler());
-        
-        // Register GET /result/{jobId} endpoint
         server.createContext("/result/", new ResultHandler());
         
-        server.setExecutor(null); // Use default executor
+        server.setExecutor(null);
         server.start();
         
         System.out.println("API Server started on port " + port);
+        System.out.println("Create user endpoint: POST http://localhost:" + port + "/users");
         System.out.println("Submit endpoint: POST http://localhost:" + port + "/submit");
         System.out.println("Status endpoint: GET http://localhost:" + port + "/status/{jobId}");
         System.out.println("Result endpoint: GET http://localhost:" + port + "/result/{jobId}");
@@ -46,10 +50,9 @@ public class ApiServer {
     }
     
     private String extractJobId(String path, String prefix) {
-        // Extract jobId from /status/{jobId} or /result/{jobId}
         String[] parts = path.split("/");
         if (parts.length >= 3) {
-            String prefixName = prefix.substring(1, prefix.length() - 1); // Remove leading / and trailing /
+            String prefixName = prefix.substring(1, prefix.length() - 1);
             if (parts[1].equals(prefixName)) {
                 return parts[2];
             }
@@ -59,13 +62,78 @@ public class ApiServer {
     
     private String readRequestBody(HttpExchange exchange) throws IOException {
         InputStream is = exchange.getRequestBody();
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[BUFFER_SIZE];
         StringBuilder sb = new StringBuilder();
         int bytesRead;
         while ((bytesRead = is.read(buffer)) != -1) {
             sb.append(new String(buffer, 0, bytesRead, StandardCharsets.UTF_8));
         }
         return sb.toString();
+    }
+    
+    private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(statusCode, responseBytes.length);
+        
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(responseBytes);
+        }
+    }
+    
+    private int determineStatusCode(Exception e) {
+        String message = e.getMessage().toLowerCase();
+        if (message.contains("not found")) return 404;
+        if (message.contains("not completed")) return 400;
+        if (message.contains("already exists")) return 409;
+        if (message.contains("foreign key") || message.contains("constraint")) return 400;
+        return 500;
+    }
+    
+    private class UserHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendResponse(exchange, "{\"error\": \"Method not allowed\"}", 405);
+                return;
+            }
+            
+            try {
+                String requestBody = readRequestBody(exchange);
+                String userId = JsonUtils.extractValue(requestBody, "user_id");
+                String name = JsonUtils.extractValue(requestBody, "name");
+                String userTypeStr = JsonUtils.extractValue(requestBody, "user_type");
+                
+                if (userId == null || userId.isEmpty()) {
+                    sendResponse(exchange, "{\"error\": \"user_id is required\"}", 400);
+                    return;
+                }
+                
+                if (name == null || name.isEmpty()) {
+                    sendResponse(exchange, "{\"error\": \"name is required\"}", 400);
+                    return;
+                }
+                
+                // Default to CLIENT if user_type not provided
+                enums.UserType userType = enums.UserType.CLIENT;
+                if (userTypeStr != null && !userTypeStr.isEmpty()) {
+                    try {
+                        userType = enums.UserType.valueOf(userTypeStr.toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                        sendResponse(exchange, "{\"error\": \"Invalid user_type. Must be CLIENT or ADMIN\"}", 400);
+                        return;
+                    }
+                }
+                
+                service.createUser(userId, name, userType);
+                String response = "{\n  \"message\": \"User created successfully\",\n  \"user_id\": \"" + userId + "\"\n}";
+                sendResponse(exchange, response, 201);
+                
+            } catch (Exception e) {
+                String errorResponse = "{\"error\": \"" + JsonUtils.escape(e.getMessage()) + "\"}";
+                sendResponse(exchange, errorResponse, determineStatusCode(e));
+            }
+        }
     }
     
     private class SubmitHandler implements HttpHandler {
@@ -78,11 +146,9 @@ public class ApiServer {
             
             try {
                 String requestBody = readRequestBody(exchange);
-                
-                // Parse JSON request body
-                String userId = extractJsonValue(requestBody, "user_id");
-                String content = extractJsonValue(requestBody, "content");
-                String isUrlStr = extractJsonValue(requestBody, "is_url");
+                String userId = JsonUtils.extractValue(requestBody, "user_id");
+                String content = JsonUtils.extractValue(requestBody, "content");
+                String isUrlStr = JsonUtils.extractValue(requestBody, "is_url");
                 
                 if (userId == null || userId.isEmpty()) {
                     sendResponse(exchange, "{\"error\": \"user_id is required\"}", 400);
@@ -94,17 +160,17 @@ public class ApiServer {
                     return;
                 }
                 
-                boolean isUrl = "true".equalsIgnoreCase(isUrlStr) || "1".equals(isUrlStr);
-                
-                // Call service submit
+                // Parse is_url: default to false if not provided, only true if explicitly "true" or "1"
+                boolean isUrl = false;
+                if (isUrlStr != null && !isUrlStr.isEmpty()) {
+                    isUrl = "true".equalsIgnoreCase(isUrlStr.trim()) || "1".equals(isUrlStr.trim());
+                }
                 String jobId = service.submit(userId, content, isUrl);
-                
-                // Return jobId in JSON format
                 String response = "{\n  \"job_id\": \"" + jobId + "\"\n}";
                 sendResponse(exchange, response, 200);
                 
             } catch (Exception e) {
-                String errorResponse = "{\"error\": \"" + escapeJson(e.getMessage()) + "\"}";
+                String errorResponse = "{\"error\": \"" + JsonUtils.escape(e.getMessage()) + "\"}";
                 sendResponse(exchange, errorResponse, 500);
             }
         }
@@ -130,9 +196,8 @@ public class ApiServer {
                 String response = service.getStatus(jobId);
                 sendResponse(exchange, response, 200);
             } catch (Exception e) {
-                String errorResponse = "{\"error\": \"" + escapeJson(e.getMessage()) + "\"}";
-                int statusCode = e.getMessage().contains("not found") ? 404 : 500;
-                sendResponse(exchange, errorResponse, statusCode);
+                String errorResponse = "{\"error\": \"" + JsonUtils.escape(e.getMessage()) + "\"}";
+                sendResponse(exchange, errorResponse, determineStatusCode(e));
             }
         }
     }
@@ -157,89 +222,10 @@ public class ApiServer {
                 String response = service.getResult(jobId);
                 sendResponse(exchange, response, 200);
             } catch (Exception e) {
-                String errorResponse = "{\"error\": \"" + escapeJson(e.getMessage()) + "\"}";
-                int statusCode = e.getMessage().contains("not found") ? 404 : 
-                                e.getMessage().contains("not completed") ? 400 : 500;
-                sendResponse(exchange, errorResponse, statusCode);
+                String errorResponse = "{\"error\": \"" + JsonUtils.escape(e.getMessage()) + "\"}";
+                sendResponse(exchange, errorResponse, determineStatusCode(e));
             }
         }
-    }
-    
-    private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
-        exchange.sendResponseHeaders(statusCode, responseBytes.length);
-        
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(responseBytes);
-        }
-    }
-    
-    private String escapeJson(String input) {
-        if (input == null) return "";
-        return input.replace("\\", "\\\\")
-                   .replace("\"", "\\\"")
-                   .replace("\n", "\\n")
-                   .replace("\r", "\\r")
-                   .replace("\t", "\\t");
-    }
-    
-    private String extractJsonValue(String json, String key) {
-        if (json == null || json.isEmpty()) return null;
-        
-        // Simple JSON parsing - look for "key": "value" or "key": value
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
-        if (keyIndex == -1) return null;
-        
-        // Find the colon after the key
-        int colonIndex = json.indexOf(":", keyIndex);
-        if (colonIndex == -1) return null;
-        
-        // Skip whitespace after colon
-        int valueStart = colonIndex + 1;
-        while (valueStart < json.length() && Character.isWhitespace(json.charAt(valueStart))) {
-            valueStart++;
-        }
-        
-        if (valueStart >= json.length()) return null;
-        
-        // Check if value is a string (starts with ")
-        if (json.charAt(valueStart) == '"') {
-            // String value - find the closing quote
-            int valueEnd = json.indexOf("\"", valueStart + 1);
-            if (valueEnd == -1) return null;
-            
-            // Handle escaped quotes
-            while (valueEnd > valueStart + 1 && json.charAt(valueEnd - 1) == '\\') {
-                valueEnd = json.indexOf("\"", valueEnd + 1);
-                if (valueEnd == -1) return null;
-            }
-            
-            String value = json.substring(valueStart + 1, valueEnd);
-            // Unescape JSON string
-            return unescapeJson(value);
-        } else {
-            // Non-string value (boolean, number) - find the end (comma, }, or whitespace)
-            int valueEnd = valueStart;
-            while (valueEnd < json.length() && 
-                   json.charAt(valueEnd) != ',' && 
-                   json.charAt(valueEnd) != '}' && 
-                   json.charAt(valueEnd) != ']' &&
-                   !Character.isWhitespace(json.charAt(valueEnd))) {
-                valueEnd++;
-            }
-            return json.substring(valueStart, valueEnd).trim();
-        }
-    }
-    
-    private String unescapeJson(String input) {
-        if (input == null) return "";
-        return input.replace("\\\"", "\"")
-                   .replace("\\n", "\n")
-                   .replace("\\r", "\r")
-                   .replace("\\t", "\t")
-                   .replace("\\\\", "\\");
     }
 }
 

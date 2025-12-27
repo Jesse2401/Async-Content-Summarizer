@@ -1,3 +1,5 @@
+package service;
+
 import strategy.SummaryStrategy;
 import strategy.HuggingFaceStrategy;
 
