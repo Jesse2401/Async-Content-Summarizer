@@ -5,6 +5,7 @@ import enums.JobStatus;
 import dao.JobDao;
 import strategy.SummaryStrategy;
 import strategy.HuggingFaceStrategy;
+import util.CacheKeyGenerator;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -70,8 +71,7 @@ public class JobWorker {
         Job job = jobDao.findById(jobId);
         if (job == null) return;
         
-        // Check cache before processing
-        String cacheKey = generateCacheKey(job.getInputContent(), job.isUrl());
+        String cacheKey = CacheKeyGenerator.generate(job.getInputContent(), job.isUrl());
         String cachedSummary = redisCache.get(cacheKey);
         
         if (cachedSummary != null) {
@@ -90,9 +90,7 @@ public class JobWorker {
             jobDao.updateOutput(jobId, summary);
             jobDao.updateStatus(jobId, JobStatus.COMPLETED);
             
-            // Store in cache with content-based key
             redisCache.set(cacheKey, summary);
-            // Also store with jobId for quick lookup
             redisCache.set("job:" + jobId, summary);
         } catch (Exception e) {
             jobDao.updateStatus(jobId, JobStatus.FAILED);
@@ -100,27 +98,25 @@ public class JobWorker {
         }
     }
     
-    private String generateCacheKey(String text, boolean isUrl) {
-        try {
-            String input = (isUrl ? "url:" : "text:") + text;
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
-            byte[] hashBytes = md.digest(input.getBytes("UTF-8"));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return "content:" + sb.toString();
-        } catch (Exception e) {
-            // Fallback to simple key
-            return "content:" + (isUrl ? "url:" : "text:") + text.hashCode();
-        }
-    }
-    
     private String fetchContent(Job job) throws Exception {
-        if (job.isUrl()) {
-            return fetchFromUrl(job.getInputContent());
+        if (!job.isUrl()) {
+            // Direct text content - return as is
+            return job.getInputContent();
         }
-        return job.getInputContent();
+        
+        // URL content - fetch from URL
+        String url = job.getInputContent();
+        if (url == null || url.trim().isEmpty()) {
+            throw new Exception("URL is empty");
+        }
+        
+        // Basic URL validation - must start with http:// or https://
+        String trimmedUrl = url.trim();
+        if (!trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
+            throw new Exception("Invalid URL format. URL must start with http:// or https://");
+        }
+        
+        return fetchFromUrl(trimmedUrl);
     }
     
     private String fetchFromUrl(String url) throws Exception {

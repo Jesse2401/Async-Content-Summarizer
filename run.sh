@@ -68,10 +68,12 @@ CLASSPATH=".:$DRIVER_JAR:$LOMBOK_JAR"
 
 # Compile if needed - check if any source file is newer than class files
 NEED_COMPILE=false
-if [ ! -f "contentSummarizer.class" ] || \
-   [ "contentSummarizer.java" -nt "contentSummarizer.class" ] || \
+if [ ! -f "Application.class" ] || \
+   [ "Application.java" -nt "Application.class" ] || \
    [ "config/DatabaseConfiguration.java" -nt "config/DatabaseConfiguration.class" ] || \
-   [ "strategy/HuggingFaceStrategy.java" -nt "strategy/HuggingFaceStrategy.class" ]; then
+   [ "strategy/HuggingFaceStrategy.java" -nt "strategy/HuggingFaceStrategy.class" ] || \
+   [ "api/ApiServer.java" -nt "api/ApiServer.class" ] || \
+   [ "service/ContentSummarizerService.java" -nt "service/ContentSummarizerService.class" ]; then
     NEED_COMPILE=true
 fi
 
@@ -84,7 +86,10 @@ if [ "$NEED_COMPILE" = true ]; then
         strategy/*.java \
         dao/*.java \
         worker/*.java \
-        *.java
+        service/*.java \
+        api/*.java \
+        util/*.java \
+        Application.java
     if [ $? -ne 0 ]; then
         echo "❌ Compilation failed!"
         exit 1
@@ -94,5 +99,5 @@ fi
 
 # Run the application
 echo "Running application..."
-java -cp ".:$DRIVER_JAR:$LOMBOK_JAR:config:dao:worker:strategy:enums:models" contentSummarizer
+java -cp ".:$DRIVER_JAR:$LOMBOK_JAR:config:dao:worker:strategy:enums:models:service:api:util" Application
 

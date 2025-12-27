@@ -77,5 +77,45 @@ public class JobDao {
             JobStatus.valueOf(rs.getString("status"))
         );
     }
+    
+    public java.sql.Timestamp getCreatedAt(String jobId) throws SQLException {
+        TimestampPair timestamps = getTimestamps(jobId);
+        return timestamps != null ? timestamps.createdAt : null;
+    }
+    
+    public java.sql.Timestamp getUpdatedAt(String jobId) throws SQLException {
+        TimestampPair timestamps = getTimestamps(jobId);
+        return timestamps != null ? timestamps.updatedAt : null;
+    }
+    
+    /**
+     * Gets both timestamps in a single query for efficiency
+     */
+    private TimestampPair getTimestamps(String jobId) throws SQLException {
+        String sql = "SELECT createdAt, updatedAt FROM jobs WHERE id = ?";
+        try (Connection conn = DatabaseConfiguration.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, jobId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new TimestampPair(
+                        rs.getTimestamp("createdAt"),
+                        rs.getTimestamp("updatedAt")
+                    );
+                }
+                return null;
+            }
+        }
+    }
+    
+    private static class TimestampPair {
+        final java.sql.Timestamp createdAt;
+        final java.sql.Timestamp updatedAt;
+        
+        TimestampPair(java.sql.Timestamp createdAt, java.sql.Timestamp updatedAt) {
+            this.createdAt = createdAt;
+            this.updatedAt = updatedAt;
+        }
+    }
 }
 
