@@ -66,17 +66,33 @@ fi
 # Build classpath
 CLASSPATH=".:$DRIVER_JAR:$LOMBOK_JAR"
 
-# Compile if needed
-if [ ! -f "DatabaseConfiguration.class" ] || [ "DatabaseConfiguration.java" -nt "DatabaseConfiguration.class" ]; then
+# Compile if needed - check if any source file is newer than class files
+NEED_COMPILE=false
+if [ ! -f "contentSummarizer.class" ] || \
+   [ "contentSummarizer.java" -nt "contentSummarizer.class" ] || \
+   [ "config/DatabaseConfiguration.java" -nt "config/DatabaseConfiguration.class" ] || \
+   [ "strategy/HuggingFaceStrategy.java" -nt "strategy/HuggingFaceStrategy.class" ]; then
+    NEED_COMPILE=true
+fi
+
+if [ "$NEED_COMPILE" = true ]; then
     echo "Compiling..."
-    javac -cp "$CLASSPATH" DatabaseConfiguration.java enums/*.java models/*.java contentSummarizer.java
+    javac -cp "$CLASSPATH" -processor lombok.launch.AnnotationProcessorHider\$AnnotationProcessor \
+        config/*.java \
+        enums/*.java \
+        models/*.java \
+        strategy/*.java \
+        dao/*.java \
+        worker/*.java \
+        *.java
     if [ $? -ne 0 ]; then
         echo "❌ Compilation failed!"
         exit 1
     fi
+    echo "✓ Compilation successful!"
 fi
 
 # Run the application
 echo "Running application..."
-java -cp ".:$DRIVER_JAR" contentSummarizer
+java -cp ".:$DRIVER_JAR:$LOMBOK_JAR:config:dao:worker:strategy:enums:models" contentSummarizer
 
