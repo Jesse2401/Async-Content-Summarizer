@@ -78,12 +78,22 @@ public class JobWorker {
         
         String cacheKey = CacheKeyGenerator.generate(job.getInputContent(), job.isUrl());
         String cachedSummary = redisCache.get(cacheKey);
-        
         if (cachedSummary != null) {
-            // Cache hit - use cached result
             jobDao.updateOutput(jobId, cachedSummary);
             jobDao.updateStatus(jobId, JobStatus.COMPLETED);
+            redisCache.clearProcessingMarker(cacheKey);
             return;
+        }
+        
+        String processingJobId = redisCache.getProcessingJobId(cacheKey);
+        if (processingJobId != null && !processingJobId.equals(jobId)) {
+            Thread.sleep(500);
+            cachedSummary = redisCache.get(cacheKey);
+            if (cachedSummary != null) {
+                jobDao.updateOutput(jobId, cachedSummary);
+                jobDao.updateStatus(jobId, JobStatus.COMPLETED);
+                return;
+            }
         }
         
         jobDao.updateStatus(jobId, JobStatus.PROCESSING);
