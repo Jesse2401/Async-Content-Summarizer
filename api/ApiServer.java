@@ -160,7 +160,6 @@ public class ApiServer {
                     return;
                 }
                 
-                // Parse is_url: default to false if not provided, only true if explicitly "true" or "1"
                 boolean isUrl = false;
                 if (isUrlStr != null && !isUrlStr.isEmpty()) {
                     isUrl = "true".equalsIgnoreCase(isUrlStr.trim()) || "1".equals(isUrlStr.trim());

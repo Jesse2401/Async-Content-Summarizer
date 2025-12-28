@@ -50,14 +50,30 @@ public abstract class ContentSummarizerService {
             return jobId;
         }
         
-        // Cache miss - proceed with normal flow
-        String jobId = UUID.randomUUID().toString();
-        Job job = new Job(jobId, userId, text, isUrl, null, JobStatus.QUEUED);
-        jobDao.create(job);
-        userDao.addJobId(userId, jobId);
-        queueService.enqueue(jobId);
+        String processingJobId = redisCache.getProcessingJobId(cacheKey);
+        if (processingJobId != null) {
+            String jobId = UUID.randomUUID().toString();
+            Job job = new Job(jobId, userId, text, isUrl, null, JobStatus.QUEUED);
+            jobDao.create(job);
+            userDao.addJobId(userId, jobId);
+            queueService.enqueue(jobId);
+            return jobId;
+        }
         
-        return jobId;
+        String jobId = UUID.randomUUID().toString();
+        if (redisCache.markAsProcessing(cacheKey, jobId)) {
+            Job job = new Job(jobId, userId, text, isUrl, null, JobStatus.QUEUED);
+            jobDao.create(job);
+            userDao.addJobId(userId, jobId);
+            queueService.enqueue(jobId);
+            return jobId;
+        } else {
+            Job job = new Job(jobId, userId, text, isUrl, null, JobStatus.QUEUED);
+            jobDao.create(job);
+            userDao.addJobId(userId, jobId);
+            queueService.enqueue(jobId);
+            return jobId;
+        }
     }
     
     public String getStatus(String jobId) throws Exception {

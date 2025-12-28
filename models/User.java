@@ -3,7 +3,6 @@ package models;
 import java.util.ArrayList;
 import java.util.List;
 import enums.UserType;
-
 import lombok.Getter;
 import lombok.Setter;
 
