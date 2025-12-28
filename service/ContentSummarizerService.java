@@ -43,6 +43,8 @@ public abstract class ContentSummarizerService {
         
         if (cachedSummary != null) {
             // Cache hit - create job with cached result and mark as completed
+            // Normalize summary to ensure clean output
+            cachedSummary = normalizeSummary(cachedSummary);
             String jobId = UUID.randomUUID().toString();
             Job job = new Job(jobId, userId, text, isUrl, cachedSummary, JobStatus.COMPLETED);
             jobDao.create(job);
@@ -122,6 +124,20 @@ public abstract class ContentSummarizerService {
         json.append("}");
         
         return json.toString();
+    }
+    
+    private String normalizeSummary(String summary) {
+        if (summary == null || summary.isEmpty()) {
+            return summary;
+        }
+        
+        summary = summary.replace("\r\n", " ")
+                         .replace("\n", " ")
+                         .replace("\r", " ");
+        
+        summary = summary.replaceAll("\\s+", " ");
+        
+        return summary.trim();
     }
 }
 
