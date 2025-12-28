@@ -26,7 +26,6 @@ public class JobWorker {
         this.queueService = QueueService.getInstance();
         this.redisCache = RedisCache.getInstance();
         this.strategy = new HuggingFaceStrategy();
-        // Configure HTTP client with timeout
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -79,6 +78,7 @@ public class JobWorker {
         String cacheKey = CacheKeyGenerator.generate(job.getInputContent(), job.isUrl());
         String cachedSummary = redisCache.get(cacheKey);
         if (cachedSummary != null) {
+            cachedSummary = normalizeSummary(cachedSummary);
             jobDao.updateOutput(jobId, cachedSummary);
             jobDao.updateStatus(jobId, JobStatus.COMPLETED);
             redisCache.clearProcessingMarker(cacheKey);
@@ -90,6 +90,7 @@ public class JobWorker {
             Thread.sleep(500);
             cachedSummary = redisCache.get(cacheKey);
             if (cachedSummary != null) {
+                cachedSummary = normalizeSummary(cachedSummary);
                 jobDao.updateOutput(jobId, cachedSummary);
                 jobDao.updateStatus(jobId, JobStatus.COMPLETED);
                 return;
@@ -101,6 +102,9 @@ public class JobWorker {
         try {
             String content = fetchContent(job);
             String summary = strategy.generateSummary(content);
+            
+            // Normalize summary: replace newlines and clean up whitespace
+            summary = normalizeSummary(summary);
             
             jobDao.updateOutput(jobId, summary);
             jobDao.updateStatus(jobId, JobStatus.COMPLETED);
@@ -161,6 +165,20 @@ public class JobWorker {
         } else {
             throw new Exception("Failed to fetch content from URL. HTTP Status: " + response.statusCode());
         }
+    }
+    
+    private String normalizeSummary(String summary) {
+        if (summary == null || summary.isEmpty()) {
+            return summary;
+        }
+        
+        summary = summary.replace("\r\n", " ")
+                         .replace("\n", " ")
+                         .replace("\r", " ");
+        
+        summary = summary.replaceAll("\\s+", " ");
+        
+        return summary.trim();
     }
 }
 
