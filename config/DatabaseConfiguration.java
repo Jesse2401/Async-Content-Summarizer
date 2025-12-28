@@ -12,14 +12,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class DatabaseConfiguration {
-    // Environment variables cache
     private static Map<String, String> envMap = new HashMap<>();
     private static boolean envLoaded = false;
     
-    // Database connection
     private static Connection connection = null;
     
-    // Database configuration from .env
     private static String DB_HOST;
     private static String DB_PORT;
     private static String DB_NAME;
@@ -27,7 +24,6 @@ public class DatabaseConfiguration {
     private static String DB_PASSWORD;
     
     static {
-        // Load MySQL JDBC driver (optional - modern JDBC can auto-detect)
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
         } catch (ClassNotFoundException e) {
@@ -35,10 +31,8 @@ public class DatabaseConfiguration {
             System.err.println("Driver will be auto-detected if present in classpath at runtime.");
         }
         
-        // Load environment variables
         loadEnv();
         
-        // Initialize database configuration
         DB_HOST = getEnv("DB_HOST", "localhost");
         DB_PORT = getEnv("DB_PORT", "3306");
         DB_NAME = getEnv("DB_NAME", "asyncContentSummariser");
@@ -46,9 +40,6 @@ public class DatabaseConfiguration {
         DB_PASSWORD = getEnv("DB_PASSWORD", "");
     }
     
-    /**
-     * Load environment variables from .env file
-     */
     private static void loadEnv() {
         if (envLoaded) return;
         
@@ -63,7 +54,6 @@ public class DatabaseConfiguration {
                     String key = line.substring(0, equalsIndex).trim();
                     String value = line.substring(equalsIndex + 1).trim();
                     
-                    // Remove quotes if present
                     if ((value.startsWith("\"") && value.endsWith("\"")) || 
                         (value.startsWith("'") && value.endsWith("'"))) {
                         value = value.substring(1, value.length() - 1);
@@ -78,9 +68,6 @@ public class DatabaseConfiguration {
         }
     }
     
-    /**
-     * Get environment variable (checks .env file, then system env, then default)
-     */
     private static String getEnv(String key, String defaultValue) {
         loadEnv();
         
@@ -96,9 +83,6 @@ public class DatabaseConfiguration {
         return defaultValue;
     }
     
-    /**
-     * Get database connection
-     */
     public static Connection getConnection() throws SQLException {
         if (connection == null || connection.isClosed()) {
             String dbUrl = "jdbc:mysql://" + DB_HOST + ":" + DB_PORT + "/" + DB_NAME + "?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true";
@@ -107,17 +91,11 @@ public class DatabaseConfiguration {
         return connection;
     }
     
-    /**
-     * Get connection without database (for creating database)
-     */
     private static Connection getConnectionWithoutDb() throws SQLException {
         String baseUrl = "jdbc:mysql://" + DB_HOST + ":" + DB_PORT;
         return DriverManager.getConnection(baseUrl, DB_USER, DB_PASSWORD);
     }
     
-    /**
-     * Close database connection
-     */
     public static void closeConnection() {
         try {
             if (connection != null && !connection.isClosed()) {
@@ -129,9 +107,6 @@ public class DatabaseConfiguration {
         }
     }
     
-    /**
-     * Initialize database and tables
-     */
     public static void initialize() {
         try {
             createDatabaseIfNotExists();
@@ -142,13 +117,9 @@ public class DatabaseConfiguration {
         }
     }
     
-    /**
-     * Create database if it doesn't exist
-     */
     private static void createDatabaseIfNotExists() throws SQLException {
         Connection conn = getConnectionWithoutDb();
         try (Statement stmt = conn.createStatement()) {
-            // Check if database exists
             var resultSet = stmt.executeQuery("SHOW DATABASES LIKE '" + DB_NAME + "'");
             boolean exists = resultSet.next();
             resultSet.close();
@@ -162,13 +133,9 @@ public class DatabaseConfiguration {
         }
     }
     
-    /**
-     * Create tables if they don't exist
-     */
     private static void createTablesIfNotExists() throws SQLException {
         Connection conn = getConnection();
         try (Statement stmt = conn.createStatement()) {
-            // Check and create Users table
             var resultSet = stmt.executeQuery("SHOW TABLES LIKE 'users'");
             boolean usersExists = resultSet.next();
             resultSet.close();
